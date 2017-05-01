@@ -1,3 +1,5 @@
+// run-on-change sslconnect.c -- gcc sslconnect.c -lssl -lcrypto -- ./a.out
+
 /* ------------------------------------------------------------ *
  * file:        sslconnect.c                                    *
  * purpose:     Example code for building a SSL connection and  *
@@ -27,18 +29,24 @@
  * ---------------------------------------------------------- */
 int create_socket(char[], BIO *);
 
-int main() {
+int main(int argc, char **argv) {
 
-  char           dest_url[] = "https://www.hp.com";
+  char            *dest_url = "https://jespi.y.apk.li\0www.hp.com";
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   X509_NAME       *certname = NULL;
+  ASN1_TIME        *asntime = NULL;
   const SSL_METHOD *method;
   SSL_CTX *ctx;
   SSL *ssl;
   int server = 0;
   int ret, i;
+
+  for (i = 1; i < argc; i ++) {
+    /* Now, very simplistic... */
+    dest_url = argv [i];
+  }
 
   /* ---------------------------------------------------------- *
    * These function calls initialize openssl for correct work.  *
@@ -57,8 +65,10 @@ int main() {
   /* ---------------------------------------------------------- *
    * initialize SSL library and register algorithms             *
    * ---------------------------------------------------------- */
-  if(SSL_library_init() < 0)
+  if(SSL_library_init() < 0) {
     BIO_printf(outbio, "Could not initialize the OpenSSL library !\n");
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Set SSLv2 client hello, also announce SSLv3 and TLSv1      *
@@ -68,8 +78,10 @@ int main() {
   /* ---------------------------------------------------------- *
    * Try to create a new SSL context                            *
    * ---------------------------------------------------------- */
-  if ( (ctx = SSL_CTX_new(method)) == NULL)
+  if ( (ctx = SSL_CTX_new(method)) == NULL) {
     BIO_printf(outbio, "Unable to create a new SSL context structure.\n");
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Disabling SSLv2 will leave v3 and TSLv1 for negotiation    *
@@ -85,8 +97,10 @@ int main() {
    * Make the underlying TCP socket connection                  *
    * ---------------------------------------------------------- */
   server = create_socket(dest_url, outbio);
-  if(server != 0)
-    BIO_printf(outbio, "Successfully made the TCP connection to: %s.\n", dest_url);
+  if(server == 0) {
+    BIO_printf(outbio, "Failed to make the TCP connection to: %s.\n", dest_url);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Attach the SSL session to the socket descriptor            *
@@ -96,19 +110,19 @@ int main() {
   /* ---------------------------------------------------------- *
    * Try to SSL-connect here, returns 1 for success             *
    * ---------------------------------------------------------- */
-  if ( SSL_connect(ssl) != 1 )
+  if ( SSL_connect(ssl) != 1 ) {
     BIO_printf(outbio, "Error: Could not build a SSL session to: %s.\n", dest_url);
-  else
-    BIO_printf(outbio, "Successfully enabled SSL/TLS session to: %s.\n", dest_url);
+    exit (1);
+  }
 
   /* ---------------------------------------------------------- *
    * Get the remote certificate into the X509 structure         *
    * ---------------------------------------------------------- */
   cert = SSL_get_peer_certificate(ssl);
-  if (cert == NULL)
+  if (cert == NULL) {
     BIO_printf(outbio, "Error: Could not get a certificate from: %s.\n", dest_url);
-  else
-    BIO_printf(outbio, "Retrieved the server's certificate from: %s.\n", dest_url);
+    exit (1);
+  }
 
   /* ---------------------------------------------------------- *
    * extract various certificate information                    *
@@ -116,11 +130,11 @@ int main() {
   certname = X509_NAME_new();
   certname = X509_get_subject_name(cert);
 
-  /* ---------------------------------------------------------- *
-   * display the cert subject here                              *
-   * -----------------------------------------------------------*/
-  BIO_printf(outbio, "Displaying the certificate subject data:\n");
+  asntime = X509_get_notAfter(cert);
+
   X509_NAME_print_ex(outbio, certname, 0, 0);
+  BIO_printf(outbio, ": ");
+  ASN1_TIME_print(outbio, asntime);
   BIO_printf(outbio, "\n");
 
   /* ---------------------------------------------------------- *
@@ -130,7 +144,6 @@ int main() {
   close(server);
   X509_free(cert);
   SSL_CTX_free(ctx);
-  BIO_printf(outbio, "Finished SSL/TLS connection with server: %s.\n", dest_url);
   return(0);
 }
 
